@@ -251,16 +251,29 @@ float fbm(vec2 p) {
   return v;
 }
 
+float fbmLow(vec2 p) {
+  float v = 0.0, a = 0.5;
+  v += a * noise(p);
+  p = p * 2.1 + vec2(1.7, 9.2);
+  a *= 0.48;
+  v += a * noise(p);
+  return v;
+}
+
 float terrain(vec2 xz) {
   return fbm(xz * 0.6 + uTime * 0.01) * 2.0 - 0.5;
 }
 
+float terrainLow(vec2 xz) {
+  return fbmLow(xz * 0.6 + uTime * 0.01) * 2.0 - 0.5;
+}
+
 vec3 terrainNormal(vec2 xz) {
-  float eps = 0.01;
-  float hL = terrain(xz - vec2(eps, 0.0));
-  float hR = terrain(xz + vec2(eps, 0.0));
-  float hD = terrain(xz - vec2(0.0, eps));
-  float hU = terrain(xz + vec2(0.0, eps));
+  float eps = 0.03;
+  float hL = terrainLow(xz - vec2(eps, 0.0));
+  float hR = terrainLow(xz + vec2(eps, 0.0));
+  float hD = terrainLow(xz - vec2(0.0, eps));
+  float hU = terrainLow(xz + vec2(0.0, eps));
   return normalize(vec3(hL - hR, 2.0 * eps, hD - hU));
 }
 
@@ -277,16 +290,19 @@ void main() {
   rd = vec3(rd.x, rd.y * cosX - rd.z * sinX, rd.y * sinX + rd.z * cosX);
   float cosY = cos(mx); float sinY = sin(mx);
   rd = vec3(rd.x * cosY + rd.z * sinY, rd.y, -rd.x * sinY + rd.z * cosY);
-  float t = 0.0, dt = 0.05;
+  float t = 0.0, dt = 0.12;
   bool hitTerrain = false, hitWater = false;
   vec3 hitP = ro;
-  for (int i = 0; i < 80; i++) {
+  for (int i = 0; i < 48; i++) {
     vec3 p = ro + rd * t;
+    // Early sky-out: terrain is bounded above ~1.5; if ray is past 2.0
+    // heading up it can never hit terrain or water again.
+    if (p.y > 2.0 && rd.y > 0.0) break;
     float h = terrain(p.xz);
     if (p.y < h) { hitTerrain = true; hitP = p; break; }
     if (p.y < 0.0) { hitWater = true; hitP = p; break; }
-    t += dt + t * 0.012;
-    if (t > 40.0) break;
+    t += dt + t * 0.03;
+    if (t > 25.0) break;
   }
   vec3 col;
   if (hitTerrain) {

@@ -9,6 +9,16 @@ interface ShaderCanvasProps {
   mouse: { x: number; y: number };
 }
 
+// Per-shader internal resolution scale. Noise Landscape (index 3) is an
+// expensive ray-marched terrain — rendering it at 0.6x the pixel count
+// (CSS still fills the viewport) drops GPU load ~2.8x with no visible
+// quality loss on a low-frequency landscape. All other shaders are cheap
+// enough to render at full resolution.
+const SHADER_RES_SCALE: Record<number, number> = {
+  3: 0.6,
+};
+const getResScale = (index: number) => SHADER_RES_SCALE[index] ?? 1.0;
+
 export default function ShaderCanvas({ activeIndex, mouse }: ShaderCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<{
@@ -72,7 +82,12 @@ export default function ShaderCanvas({ activeIndex, mouse }: ShaderCanvasProps) 
       powerPreference: 'high-performance',
     });
     renderer.setPixelRatio(1);
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    const initialScale = getResScale(0);
+    renderer.setSize(
+      Math.round(window.innerWidth * initialScale),
+      Math.round(window.innerHeight * initialScale),
+      false
+    );
     renderer.setClearColor(0x0d0d0d);
 
     const scene = new THREE.Scene();
@@ -114,9 +129,14 @@ export default function ShaderCanvas({ activeIndex, mouse }: ShaderCanvasProps) 
 
     state.animId = requestAnimationFrame(animate);
 
-    // Resize handler
+    // Resize handler — respects the current shader's resolution scale
     const handleResize = () => {
-      renderer.setSize(window.innerWidth, window.innerHeight);
+      const scale = getResScale(state.currentIndex);
+      renderer.setSize(
+        Math.round(window.innerWidth * scale),
+        Math.round(window.innerHeight * scale),
+        false
+      );
     };
     window.addEventListener('resize', handleResize);
 
@@ -132,7 +152,7 @@ export default function ShaderCanvas({ activeIndex, mouse }: ShaderCanvasProps) 
   // Swap shader when activeIndex changes
   useEffect(() => {
     const state = stateRef.current;
-    if (!state.mesh) return;
+    if (!state.mesh || !state.renderer) return;
 
     const material = getOrCreateMaterial(activeIndex);
     // Preserve time continuity but reset for new shader
@@ -140,6 +160,15 @@ export default function ShaderCanvas({ activeIndex, mouse }: ShaderCanvasProps) 
     state.time = 0;
     state.mesh.material = material;
     state.currentIndex = activeIndex;
+
+    // Resize the drawing buffer to the new shader's resolution scale
+    // (CSS stays at 100vw/100vh so the canvas still fills the viewport).
+    const scale = getResScale(activeIndex);
+    state.renderer.setSize(
+      Math.round(window.innerWidth * scale),
+      Math.round(window.innerHeight * scale),
+      false
+    );
   }, [activeIndex, getOrCreateMaterial]);
 
   return (
